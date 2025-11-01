@@ -1,4 +1,4 @@
-use crate::editor::{MicroHex, EditMode};
+use crate::editor::{MicroHex, EditMode, UndoState};
 
 pub fn cycle_mode(editor: &mut MicroHex) {
     editor.mode = match editor.mode {
@@ -9,7 +9,27 @@ pub fn cycle_mode(editor: &mut MicroHex) {
     editor.pending_nibble = None; // Clear any pending nibble when switching modes
 }
 
+pub fn undo(editor: &mut MicroHex) {
+    if let Some(prev) = editor.undo_stack.pop() {
+        editor.bytes = prev.bytes;
+        editor.cursor_pos = prev.cursor_pos;
+        editor.offset = prev.offset;
+        editor.pending_nibble = prev.pending_nibble;
+        editor.modified = editor.bytes != editor.original_bytes;
+    }
+}
+
+fn push_undo(editor: &mut MicroHex) {
+    editor.undo_stack.push(UndoState {
+        bytes: editor.bytes.clone(),
+        cursor_pos: editor.cursor_pos,
+        offset: editor.offset,
+        pending_nibble: editor.pending_nibble,
+    });
+}
+
 pub fn edit_byte(editor: &mut MicroHex, c: char) {
+    push_undo(editor); // Saves copy of current file data onto undo stack before making any changes
     match editor.mode {
         EditMode::EditAscii => {
             // ASCII editing mode
@@ -61,6 +81,7 @@ pub fn edit_byte(editor: &mut MicroHex, c: char) {
 }
 
 pub fn backspace(editor: &mut MicroHex) {
+    push_undo(editor);
     // Set the current byte to null (0x00), then move the cursor back one (if not at 0)
     if editor.cursor_pos < editor.bytes.len() {
         editor.bytes[editor.cursor_pos] = 0;
@@ -72,6 +93,7 @@ pub fn backspace(editor: &mut MicroHex) {
 }
 
 pub fn delete_prev_byte(editor: &mut MicroHex) {
+    push_undo(editor);
     // Completely remove the byte at the current cursor position, then move back
     // But never delete the last remaining byte
     if editor.cursor_pos < editor.bytes.len() && editor.bytes.len() > 1 {

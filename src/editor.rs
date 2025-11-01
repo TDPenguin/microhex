@@ -4,7 +4,7 @@ use crossterm::queue;
 use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, ClearType},
     cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
 };
 
@@ -19,9 +19,18 @@ pub enum EditMode {
     EditAscii,
 }
 
+#[derive(Clone)]
+pub struct UndoState {
+    pub bytes: Vec<u8>,
+    pub cursor_pos: usize,
+    pub offset: usize,
+    pub pending_nibble: Option<u8>,
+}
+
 pub struct MicroHex {
     pub original_bytes: Vec<u8>,
     pub bytes: Vec<u8>,
+    pub undo_stack: Vec<UndoState>,
     pub filename: String,
     pub offset: usize, // Current view offset (which byte we start displaying from)
     pub cursor_pos: usize, // Which byte the cursor is on
@@ -41,6 +50,7 @@ impl MicroHex {
         Ok(Self {
             original_bytes: bytes.clone(),
             bytes,
+            undo_stack: Vec::new(),
             filename,
             offset: 0,
             cursor_pos: 0,
@@ -62,53 +72,8 @@ impl MicroHex {
 
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') if key.modifiers.contains(event::KeyModifiers::ALT) => {
-                            if self.modified {
-                                if let Some(ans) = self.prompt("File modified. Save before exit? (y/n/c): ")? {
-                                    match ans {
-                                        'y' => { self.save()?; break; }
-                                        'n' => break,
-                                        _ => continue,
-                                    }
-                                }
-                            } else {
-                                break;
-                            }
-                        },
-                        KeyCode::Char('s') if key.modifiers.contains(event::KeyModifiers::CONTROL) && self.modified => {
-                            if let Some(ans) = self.prompt("Really save changes? (y/n): ")? {
-                                if ans == 'y' {
-                                    self.save()?;
-                                }
-                            }
-                        },
-                        KeyCode::Char('e') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                            edit::cycle_mode(self);
-                        },
-                        KeyCode::Tab => edit::cycle_mode(self),
-                        KeyCode::Up => navigation::move_up(self),
-                        KeyCode::Down => navigation::move_down(self),
-                        KeyCode::Left => navigation::move_left(self),
-                        KeyCode::Right => navigation::move_right(self),
-                        KeyCode::PageUp => {
-                            let speed = if key.modifiers.contains(event::KeyModifiers::SHIFT) { 10 } else { 1 };
-                            navigation::page_up(self, speed);
-                        },
-                        KeyCode::PageDown => {
-                            let speed = if key.modifiers.contains(event::KeyModifiers::SHIFT) { 10 } else { 1 };
-                            navigation::page_down(self, speed);
-                        },
-                        KeyCode::Char(c) if !matches!(self.mode, EditMode::View) => {
-                            edit::edit_byte(self, c);
-                        },
-                        KeyCode::Backspace if !matches!(self.mode, EditMode::View) && key.modifiers.contains(event::KeyModifiers::SHIFT) => {
-                            edit::delete_prev_byte(self);
-                        },
-                        KeyCode::Backspace if !matches!(self.mode, EditMode::View) => {
-                            edit::backspace(self);
-                        },
-                        _ => {}
+                    if self.handle_key_event(key)? {
+                        break;
                     }
                 }
             }
@@ -117,6 +82,74 @@ impl MicroHex {
         terminal::disable_raw_mode()?;
         execute!(io::stdout(), cursor::Show, LeaveAlternateScreen)?;
         Ok(())
+    }
+
+    fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> io::Result<bool> {
+        match key.code {
+
+            // FILE/MODE CONTROLS
+            KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::ALT) => {
+                if self.modified {
+                    if let Some(ans) = self.prompt("File modified. Save before exit? (y/n/c): ")? {
+                        match ans {
+                            'y' => { self.save()?; return Ok(true); }
+                            'n' => return Ok(true),
+                            _ => return Ok(false),
+                        }
+                    }
+                } else {
+                    return Ok(true);
+                }
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) && self.modified => {
+                if let Some(ans) = self.prompt("Really save changes? (y/n): ")? {
+                    if ans == 'y' {
+                        self.save()?;
+                    }
+                }
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                edit::cycle_mode(self);
+            }
+            KeyCode::Tab => edit::cycle_mode(self),
+
+
+            // UNDO CONTROLS
+            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                edit::undo(self);
+            }
+
+
+            // NAVIGATION CONTROLS
+            KeyCode::Up => navigation::move_up(self),
+            KeyCode::Down => navigation::move_down(self),
+            KeyCode::Left => navigation::move_left(self),
+            KeyCode::Right => navigation::move_right(self),
+            KeyCode::PageUp => {
+                let speed = if key.modifiers.contains(KeyModifiers::SHIFT) { 10 } else { 1 };
+                navigation::page_up(self, speed);
+            }
+            KeyCode::PageDown => {
+                let speed = if key.modifiers.contains(KeyModifiers::SHIFT) { 10 } else { 1 };
+                navigation::page_down(self, speed);
+            }
+            KeyCode::Home => navigation::move_home(self),
+            KeyCode::End => navigation::move_end(self),
+
+
+            // EDITING CONTROLS
+            KeyCode::Char(c) if !matches!(self.mode, EditMode::View) => {
+                edit::edit_byte(self, c);
+            }
+            KeyCode::Backspace if !matches!(self.mode, EditMode::View) && key.modifiers.contains(KeyModifiers::SHIFT) => {
+                edit::delete_prev_byte(self);
+            }
+            KeyCode::Backspace if !matches!(self.mode, EditMode::View) => {
+                edit::backspace(self);
+            }
+            _ => {}
+        }
+        Ok(false)
     }
 
     fn prompt(&self, message: &str) -> io::Result<Option<char>> {
