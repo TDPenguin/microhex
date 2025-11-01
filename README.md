@@ -2,7 +2,7 @@
 A modern, lightweight TUI hex editor - Like [Nano](https://nano-editor.org/), but for binary files.
 
 ## Why
-When you need to inspect or edit raw binary files—firmware, dumps, corrupted files, or any “bytes and bits” scenario—you shouldn’t need a heavy GUI tool.
+When you need to inspect or edit raw binary files, firmware, dumps, corrupted files, or any “bytes and bits” scenario, you shouldn’t need a heavy GUI tool.
 microhex gives you:
 - Terminal-native interface
 - Fast startup and small footprint
