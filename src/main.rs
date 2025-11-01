@@ -1,11 +1,13 @@
-use std::{fs, env, io};
+use std::{fs, env, io, path::PathBuf};
 
 mod editor;
 mod navigation;
 mod display;
 mod edit;
+mod config;
 
 use editor::{MicroHex};
+use config::AppConfig;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -26,8 +28,13 @@ fn main() -> io::Result<()> {
         bytes.push(0);
     }
 
+    // Use TOML config file
+    let exe_dir: PathBuf = env::current_exe()?.parent().unwrap().to_path_buf();
+    let config_path = exe_dir.join("config.toml");
+    let config = AppConfig::load(config_path.to_str().unwrap());
+
     let mut editor = MicroHex::new(args[1].clone(), bytes)?;
-    editor.run()?;
+    editor.run(&config.colors)?;
 
     Ok(())
 }

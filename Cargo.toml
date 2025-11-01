@@ -1,6 +1,6 @@
 [package]
 name = "microhex"
-version = "0.8.1"      # uses Semantic Versioning (semver): MAJOR.MINOR.PATCH
+version = "0.8.2"      # uses Semantic Versioning (semver): MAJOR.MINOR.PATCH
 edition = "2024"
 authors = ["TDPenguin"]
 license = "MIT"
@@ -10,3 +10,5 @@ repository = "https://github.com/TDPenguin/microhex"
 
 [dependencies]
 crossterm = "0.29.0"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.8"

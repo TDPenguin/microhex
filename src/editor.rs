@@ -11,6 +11,7 @@ use crossterm::{
 use crate::display;
 use crate::navigation;
 use crate::edit;
+use crate::config::ColorConfig;
 
 #[derive(PartialEq)]
 pub enum EditMode {
@@ -62,13 +63,13 @@ impl MicroHex {
         })
     }
 
-    pub fn run(&mut self) -> io::Result<()> {
+    pub fn run(&mut self, colors: &ColorConfig) -> io::Result<()> {
         execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
         terminal::enable_raw_mode()?;
         execute!(io::stdout(), terminal::Clear(ClearType::All))?;
 
         loop {
-            display::draw(self)?;
+            display::draw(self, colors)?;
 
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
@@ -141,7 +142,7 @@ impl MicroHex {
             KeyCode::Char(c) if !matches!(self.mode, EditMode::View) => {
                 edit::edit_byte(self, c);
             }
-            KeyCode::Backspace if !matches!(self.mode, EditMode::View) && key.modifiers.contains(KeyModifiers::SHIFT) => {
+            KeyCode::Delete if !matches!(self.mode, EditMode::View) => {
                 edit::delete_prev_byte(self);
             }
             KeyCode::Backspace if !matches!(self.mode, EditMode::View) => {
