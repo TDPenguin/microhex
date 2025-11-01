@@ -1,9 +1,15 @@
+//! Terminal rendering and UI drawing.
+//!
+//! Handles all output to the terminal, including the status bar, help bar, hex/ASCII display, and color highlighting.
+//! Uses the config system for color themes. All drawing is stateless and based on the current `MicroHex` state.
+
 use std::io::{self, Write};
 use crossterm::{
     queue,
     terminal::{self, ClearType},
     style::{Color, SetForegroundColor, SetBackgroundColor, ResetColor},
     cursor,
+    event::{self, Event},
 };
 
 use crate::config::ColorConfig;
@@ -80,7 +86,18 @@ fn draw_status_line<W: Write>(stdout: &mut W, editor: &MicroHex, cols: u16, colo
 
 fn draw_help_bar<W: Write>(stdout: &mut W, editor: &MicroHex, cols: u16, colors: &ColorConfig) -> io::Result<()> {
     let help_row = (editor.lines_per_page + 2) as u16;
-    let help_text = "^G Help   ^X Exit   ^S Save   ^E/Tab Mode   ^Z Undo";
+    
+    // If we have an active search, show search info instead of normal help
+    let help_text = if let Some(ref search_state) = editor.search_state {
+        format!(
+            "Search: {} | Press 'n' for next, Shift+N for previous, Esc to clear search | {} ",
+            search_state.match_info(),
+            search_state.total_matches()
+        )
+    } else {
+        String::from("^G Help   ^X Exit   ^S Save   ^E/Tab Mode   ^Z Undo   Home/End: Start/EOF   Arrows: Move   Del: Delete, Back: Null")
+    };
+    
     let mut line = help_text.chars().take(cols as usize).collect::<String>();
     if line.len() < cols as usize {
         line.push_str(&" ".repeat(cols as usize - line.len()));
@@ -193,6 +210,29 @@ fn set_cell_color<W: Write>(
         queue!(stdout, SetForegroundColor(Color::AnsiValue(colors.control_fg)))?; // Control/non-printable
     } else if byte.is_ascii_graphic() || byte == b' ' {
         queue!(stdout, SetForegroundColor(Color::AnsiValue(colors.printable_fg)))?; // Printable
+    }
+    Ok(())
+}
+
+/// Show a message at the bottom of the screen and wait for any key press.
+pub fn show_message(editor: &MicroHex, message: &str, colors: &ColorConfig) -> io::Result<()> {
+    let mut stdout = io::stdout();
+    let row = (editor.lines_per_page + 4) as u16;
+    queue!(
+        stdout,
+        cursor::MoveTo(0, row),
+        terminal::Clear(ClearType::CurrentLine),
+        SetBackgroundColor(crossterm::style::Color::AnsiValue(colors.status_bg)),
+        SetForegroundColor(crossterm::style::Color::AnsiValue(colors.status_fg)),
+    )?;
+    write!(stdout, "{message}")?;
+    queue!(stdout, ResetColor)?;
+    stdout.flush()?;
+    // Wait for any key press
+    loop {
+        if let Event::Key(_) = event::read()? {
+            break;
+        }
     }
     Ok(())
 }

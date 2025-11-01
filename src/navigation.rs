@@ -1,6 +1,11 @@
+//! Cursor and window navigation logic.
+//!
+//! Implements movement commands (arrows, paging, Home/End, etc.) for the editor.
+//! All navigation functions operate on a mutable reference to `MicroHex` and update cursor/offset as needed.
+
 use crate::editor::{MicroHex, EditMode};
 
-fn scroll_to_cursor(editor: &mut MicroHex) {
+pub fn scroll_to_cursor(editor: &mut MicroHex) {
     // Scroll up if cursor is above the visible window
     if editor.cursor_pos < editor.offset {
         editor.offset = editor.cursor_pos - (editor.cursor_pos % editor.bytes_per_line);
@@ -46,8 +51,8 @@ pub fn move_right(editor: &mut MicroHex) {
         editor.cursor_pos += 1;
         scroll_to_cursor(editor);
     } else if editor.mode != EditMode::View {
+        // In edit mode, allow expanding the file
         editor.bytes.push(0);
-        editor.original_bytes.push(0);
         editor.cursor_pos += 1;
         scroll_to_cursor(editor);
     }

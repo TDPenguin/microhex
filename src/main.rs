@@ -1,3 +1,7 @@
+//! Program entry point.
+//!
+//! Handles argument parsing, file loading, config loading, and starts the main editor loop.
+
 use std::{fs, env, io, path::PathBuf};
 
 mod editor;
@@ -5,6 +9,7 @@ mod navigation;
 mod display;
 mod edit;
 mod config;
+mod search;
 
 use editor::{MicroHex};
 use config::AppConfig;

@@ -1,3 +1,8 @@
+//! Configuration loading and data structures.
+//!
+//! Defines the `AppConfig` and `ColorConfig` structs, and loads configuration from a TOML file.
+//! Supports user-customizable color themes and is ready for future config options.
+
 use serde::Deserialize;
 use std::{fs, path::Path};
 

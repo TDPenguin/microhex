@@ -1,3 +1,9 @@
+//! Main editor state machine and event loop.
+//!
+//! Contains the `MicroHex` struct, which holds all editor state, and implements the main TUI loop (`run`).
+//! Handles file I/O, mode management, user prompts, and dispatches navigation/edit/display actions.
+//! All user input is processed here and routed to the appropriate module.
+
 use std::fs;
 use std::io::{self, Write};
 use crossterm::queue;
@@ -8,10 +14,7 @@ use crossterm::{
     execute,
 };
 
-use crate::display;
-use crate::navigation;
-use crate::edit;
-use crate::config::ColorConfig;
+use crate::{display, navigation, edit, config::ColorConfig, search};
 
 #[derive(PartialEq)]
 pub enum EditMode {
@@ -40,6 +43,7 @@ pub struct MicroHex {
     pub mode: EditMode,
     pub modified: bool,
     pub pending_nibble: Option<u8>, // Stores the first hex digit if one has been entered
+    pub search_state: Option<search::SearchState>, // Active search session, if any
 }
 
 impl MicroHex {
@@ -60,6 +64,7 @@ impl MicroHex {
             mode: EditMode::View,
             modified: false,
             pending_nibble: None,
+            search_state: None,
         })
     }
 
@@ -73,7 +78,7 @@ impl MicroHex {
 
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    if self.handle_key_event(key)? {
+                    if self.handle_key_event(key, colors)? {
                         break;
                     }
                 }
@@ -85,16 +90,16 @@ impl MicroHex {
         Ok(())
     }
 
-    fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> io::Result<bool> {
+    fn handle_key_event(&mut self, key: crossterm::event::KeyEvent, colors: &ColorConfig) -> io::Result<bool> {
         match key.code {
 
             // FILE/MODE CONTROLS
             KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::ALT) => {
                 if self.modified {
                     if let Some(ans) = self.prompt("File modified. Save before exit? (y/n/c): ")? {
-                        match ans {
-                            'y' => { self.save()?; return Ok(true); }
-                            'n' => return Ok(true),
+                        match ans.to_lowercase().as_str() {
+                            "y" => { self.save()?; return Ok(true); }
+                            "n" => return Ok(true),
                             _ => return Ok(false),
                         }
                     }
@@ -104,7 +109,7 @@ impl MicroHex {
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) && self.modified => {
                 if let Some(ans) = self.prompt("Really save changes? (y/n): ")? {
-                    if ans == 'y' {
+                    if ans.to_lowercase() == "y" {
                         self.save()?;
                     }
                 }
@@ -148,26 +153,98 @@ impl MicroHex {
             KeyCode::Backspace if !matches!(self.mode, EditMode::View) => {
                 edit::backspace(self);
             }
+
+            // SEARCH MODE
+            KeyCode::Char('/') => {
+                // Prompt user for search pattern (hex or ASCII)
+                if let Some(pattern_str) = self.prompt("Search [0xHEX | text:ASCII | auto]: ")? {
+                    // Convert input string to a byte pattern using search::parse_pattern
+                    if let Some(pattern) = search::parse_pattern(&pattern_str) {
+                        // Create a new search state by finding all matches
+                        self.search_state = search::SearchState::new(&self.bytes, pattern);
+                        
+                        if let Some(ref state) = self.search_state {
+                            self.cursor_pos = state.current_position();
+                            navigation::scroll_to_cursor(self);
+                            // Search info now displays persistently in help bar
+                        } else {
+                            display::show_message(
+                                self,
+                                "Pattern not found. Press any key to continue...",
+                                colors,
+                            )?;
+                        }
+                    } else {
+                        display::show_message(
+                            self,
+                            "Invalid pattern. Use even-length hex or ASCII. Press any key to continue...",
+                            colors,
+                        )?;
+                    }
+                }
+            }
+            
+            // Clear search
+            KeyCode::Esc if self.search_state.is_some() => {
+                self.search_state = None;
+            }
+            
+            // Next search match
+            KeyCode::Char('n') if self.search_state.is_some() => {
+                if let Some(ref mut state) = self.search_state {
+                    state.next_match();
+                    self.cursor_pos = state.current_position();
+                    navigation::scroll_to_cursor(self);
+                    // Match info displays in help bar automatically
+                }
+            }
+            
+            // Previous search match (Shift+N)
+            KeyCode::Char('N') if self.search_state.is_some() => {
+                if let Some(ref mut state) = self.search_state {
+                    state.prev_match();
+                    self.cursor_pos = state.current_position();
+                    navigation::scroll_to_cursor(self);
+                    // Match info displays in help bar automatically
+                }
+            }
+
             _ => {}
         }
         Ok(false)
     }
 
-    fn prompt(&self, message: &str) -> io::Result<Option<char>> {
+    fn prompt(&self, message: &str) -> io::Result<Option<String>> {
         let mut stdout = io::stdout();
-        queue!(stdout, cursor::MoveTo(0, (self.lines_per_page + 4) as u16))?;
-        queue!(stdout, terminal::Clear(ClearType::CurrentLine))?;
-        write!(stdout, "{}", message)?;
-        stdout.flush()?;
+        let mut input = String::new();
+        let prompt_row = (self.lines_per_page + 4) as u16;
+        
         loop {
+            queue!(stdout, cursor::MoveTo(0, prompt_row))?;
+            queue!(stdout, terminal::Clear(ClearType::CurrentLine))?;
+            write!(stdout, "{}{}", message, input)?;
+            stdout.flush()?;
+            
             if let Event::Key(key) = event::read()? {
-                // Only check for PRESS events, just like the main run loop
-                // This prevents capturing the key *release* from the command that opened the prompt
                 if key.kind == KeyEventKind::Press {
-                    if let KeyCode::Char(c) = key.code {
-                        return Ok(Some(c.to_ascii_lowercase()));
-                    } else if key.code == KeyCode::Esc {
-                        return Ok(Some('c')); // Treat Esc as cancel
+                    match key.code {
+                        KeyCode::Enter => {
+                            return if input.is_empty() {
+                                Ok(None)
+                            } else {
+                                Ok(Some(input))
+                            };
+                        }
+                        KeyCode::Esc => {
+                            return Ok(None);
+                        }
+                        KeyCode::Backspace => {
+                            input.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            input.push(c);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -181,7 +258,7 @@ impl MicroHex {
             data.pop();
         }
         fs::write(&self.filename, &data)?;
-        // Update original_bytes and bytes to match trimmed data
+        // Update original_bytes and bytes to match the saved state
         self.original_bytes = data.clone();
         self.bytes = data;
         self.modified = false;

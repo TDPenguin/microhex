@@ -1,6 +1,6 @@
 [package]
 name = "microhex"
-version = "0.8.2"      # uses Semantic Versioning (semver): MAJOR.MINOR.PATCH
+version = "0.8.3"      # uses Semantic Versioning (semver): MAJOR.MINOR.PATCH
 edition = "2024"
 authors = ["TDPenguin"]
 license = "MIT"

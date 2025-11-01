@@ -1,3 +1,8 @@
+//! Editing logic for hex and ASCII modes.
+//!
+//! Handles byte/nibble entry, ASCII editing, undo stack, deletion, and mode cycling.
+//! All editing actions are performed on the `MicroHex` state and support undo/redo.
+
 use crate::editor::{MicroHex, EditMode, UndoState};
 
 pub fn cycle_mode(editor: &mut MicroHex) {
@@ -41,7 +46,7 @@ pub fn edit_byte(editor: &mut MicroHex, c: char) {
                 // If we're now at the end in edit mode, append a new null byte
                 if editor.cursor_pos >= editor.bytes.len() {
                     editor.bytes.push(0);
-                    editor.original_bytes.push(0);
+                    // Don't modify original_bytes - it should stay as the original file content
                 }
                 // Scroll window if cursor goes below visible window
                 if editor.cursor_pos >= editor.offset + (editor.bytes_per_line * editor.lines_per_page) {
@@ -67,7 +72,7 @@ pub fn edit_byte(editor: &mut MicroHex, c: char) {
                     // If we're now at the end in edit mode, append a new null byte
                     if editor.cursor_pos >= editor.bytes.len() {
                         editor.bytes.push(0);
-                        editor.original_bytes.push(0);
+                        // Don't modify original_bytes - it should stay as the original file content
                     }
                     // Scroll window if needed
                     if editor.cursor_pos >= editor.offset + (editor.bytes_per_line * editor.lines_per_page) {
@@ -94,11 +99,11 @@ pub fn backspace(editor: &mut MicroHex) {
 
 pub fn delete_prev_byte(editor: &mut MicroHex) {
     push_undo(editor);
-    // Completely remove the byte at the current cursor position, then move back
+    // Completely remove the byte at the current cursor position
     // But never delete the last remaining byte
     if editor.cursor_pos < editor.bytes.len() && editor.bytes.len() > 1 {
         editor.bytes.remove(editor.cursor_pos);
-        editor.original_bytes.remove(editor.cursor_pos);
+        // Don't modify original_bytes - it should preserve the original file content for change tracking
         editor.modified = true;
         // Move cursor back after deletion (unless we're at position 0)
         if editor.cursor_pos > 0 {
