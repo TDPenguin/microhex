@@ -46,6 +46,14 @@ microhex gives you:
 * Save: Ctrl+S/Ctrl+O
 * Quit: Ctrl+Q (Prompts if unsaved changes)
 * Help: Ctrl+G (WIP)
+* Search: Press `/`, type a pattern (e.g. `0x4f2a` for hex, `hello` for ASCII, or `text:4f2a` for ASCII "4f2a"), press Enter. Use `n` for next match, `Shift+N` for previous, `Esc` to exit search mode.
+
+### Search Examples
+
+- Hex: `/ 0x4f2a` finds bytes 0x4F 0x2A
+- ASCII: `/ hello` finds "hello"
+- Force ASCII: `/ text:4f2a` finds "4f2a" as text, not hex
+- Navigate matches: Press `n` for next, `Shift+N` for previous, `Esc` to exit search mode
 
 ## License
 Distributed under the MIT license. See `LICENSE` for details.
@@ -76,4 +84,4 @@ Distributed under the MIT license. See `LICENSE` for details.
 - File-specific views (e.g., WAV, PNG, or structured binary)  
 - Advanced binary operations (XOR selection, arithmetic, etc.)  
 - Bookmarks: mark positions and jump back  
-- Advanced search (regex, ranges, multiple matches)  
+- Advanced search (regex, ranges, multiple matches)
